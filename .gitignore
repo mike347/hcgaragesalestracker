@@ -1,0 +1,10 @@
+# Generated or machine-specific files; these should never be committed
+data.js
+sales.json
+geocode-cache.json
+page-debug.html
+ATSPlugins/
+
+node_modules/
+*.log
+.DS_Store

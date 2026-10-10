@@ -1,0 +1,574 @@
+<!doctype html>
+<!--
+  Highlands Garage Sales Tracker
+  Copyright (c) 2026 Zen. Released under the MIT License (see LICENSE in the source repository).
+  Garage sale listings come from the Highlands County Tax Collector (https://www.hctaxcollector.com/garagesales/).
+  Map tiles and imagery are credited on the map itself.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="author" content="Zen">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Highlands Garage Sales</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --bg:#ffffff; --fg:#1d2733; --muted:#5b6876; --line:#d9dee4; --accent:#1f6feb; --chip:#eef2f7;
+          --c-today:#12b84a; --c-weekend:#e8710a; --c-later:#1f6feb; --c-you:#8250df; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#161b22; --fg:#e6edf3; --muted:#9aa7b4; --line:#2d3640; --accent:#58a6ff; --chip:#222b35;
+            --c-today:#2fe068; --c-weekend:#ff9b3d; --c-later:#58a6ff; --c-you:#b392f0; }
+  }
+  * { box-sizing: border-box; }
+  html, body { overscroll-behavior: none; }
+  body { margin:0; height:100vh; height:100dvh; display:flex; flex-direction:column; overflow:hidden; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-text-size-adjust:100%; }
+
+  /* ----- header ----- */
+  header { padding:10px 14px; border-bottom:1px solid var(--line); display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; }
+  h1 { font-size:16px; margin:0; }
+  .filters { display:flex; gap:6px; flex-wrap:wrap; }
+  .filters button { font:inherit; padding:5px 11px; border:1px solid var(--line); border-radius:999px; background:var(--chip); color:var(--fg); cursor:pointer; }
+  .filters button[aria-pressed="true"] { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .tools { display:flex; gap:8px; align-items:center; flex:1 1 280px; min-width:0; max-width:480px; }
+  #q { flex:1; min-width:0; font:inherit; font-size:16px; padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); }
+  #q:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  .meta { color:var(--muted); font-size:12px; margin-left:auto; }
+  .legend { display:flex; gap:12px; font-size:12px; color:var(--muted); align-items:center; flex-wrap:wrap; }
+  .legend .dot { margin-right:5px; }
+
+  /* ----- layout: list/sheet + map ----- */
+  main { flex:1; display:flex; min-height:0; }
+  #sheet { order:-1; width:330px; display:flex; flex-direction:column; min-height:0; border-right:1px solid var(--line); background:var(--bg); }
+  #sheetBar { display:none; }
+  #list { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
+  #mapwrap { position:relative; flex:1; min-width:0; }
+  #map { position:absolute; inset:0; }
+
+  /* floating location button, bottom-right of the map where a thumb reaches */
+  #locate { position:absolute; right:12px; bottom:34px; z-index:900; display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:0 16px; font:inherit; font-weight:600; color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:999px; box-shadow:0 2px 8px rgba(0,0,0,.3); cursor:pointer; white-space:nowrap; }
+  #locate[hidden] { display:none; }
+  #locate[aria-pressed="true"] { border-color:var(--c-you); }
+  .toast { position:absolute; left:50%; bottom:86px; transform:translateX(-50%); z-index:1000; width:max-content; max-width:88%; padding:9px 14px; border-radius:8px; background:rgba(20,24,30,.92); color:#fff; font-size:13px; }
+
+  /* ----- list items ----- */
+  .item { padding:10px 14px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .item:hover { background:var(--chip); }
+  .item b { display:block; }
+  .item .when { color:var(--muted); font-size:12px; }
+  .legal { flex:none; padding:8px 14px calc(8px + env(safe-area-inset-bottom)); border-top:1px solid var(--line); color:var(--muted); font-size:11px; line-height:1.5; }
+  .legal a { color:inherit; text-decoration:underline; text-underline-offset:2px; }
+  .foot { display:none; padding:14px; color:var(--muted); font-size:12px; text-align:center; }
+  .empty, .note { padding:14px; color:var(--muted); }
+  .note h2 { font-size:13px; margin:0 0 6px; color:var(--fg); }
+  .badge { display:inline-block; font-size:11px; padding:1px 7px; border-radius:999px; color:#fff; margin-left:6px; vertical-align:1px; }
+  .badge.today { background:var(--c-today); }
+  .badge.weekend { background:var(--c-weekend); }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:7px; vertical-align:0; }
+  .dot.today { background:var(--c-today); }
+  .dot.weekend { background:var(--c-weekend); }
+  .dot.later { background:var(--c-later); }
+  .dot.you { background:var(--c-you); }
+
+  /* ----- map pieces ----- */
+  .pin svg { display:block; overflow:visible; filter:drop-shadow(0 2px 2px rgba(0,0,0,.45)); transition:transform .12s; transform-origin:50% 100%; }
+  .pin:hover svg { transform:scale(1.18); }
+  .popup { max-width:260px; max-height:220px; overflow:auto; }
+  .popup .items { color:#444; font-size:12px; margin-top:4px; }
+  .nav { margin-top:8px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .leaflet-container .nav a.btn { display:inline-block; padding:9px 14px; background:#1f6feb; color:#fff; border-radius:8px; text-decoration:none; font-weight:600; }
+  .leaflet-container .nav a:not(.btn) { font-size:12px; }
+
+  /* ===== Phone, portrait: compact header, map first, list in a bottom sheet ===== */
+  @media (max-width: 720px) and (min-height: 521px) {
+    header { padding:8px 12px 6px; gap:6px 8px; }
+    h1 { order:1; font-size:15px; white-space:nowrap; }
+    h1 .co { display:none; }
+    .tools { order:2; flex:1 1 130px; max-width:none; }
+    #q { padding:9px 12px; border-radius:10px; }
+    .filters { order:3; flex:0 0 calc(100% + 24px); margin:0 -12px; padding:0 12px 2px; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; scroll-snap-type:x proximity; scroll-padding-left:12px; }
+    .filters::-webkit-scrollbar { display:none; }
+    .filters button { flex:none; padding:8px 14px; scroll-snap-align:start; white-space:nowrap; }
+    header .legend, header .meta { display:none; }
+
+    main { flex-direction:column; }
+    #mapwrap { order:0; }
+    #sheet { order:1; width:auto; border-right:0; border-top:1px solid var(--line); border-radius:14px 14px 0 0; box-shadow:0 -3px 10px rgba(0,0,0,.18);
+             --closed:calc(54px + env(safe-area-inset-bottom)); --open:min(56dvh, 480px);
+             height:var(--closed); overflow:hidden; transition:height .2s ease; position:relative; z-index:2; }
+    #sheet.open { height:var(--open); }
+    #sheetBar { display:block; flex:none; width:100%; height:54px; padding:6px 14px 0; border:0; background:none; color:var(--fg); font:inherit; text-align:left; cursor:grab;
+                touch-action:none; user-select:none; -webkit-user-select:none; -webkit-tap-highlight-color:transparent; }
+    #sheetBar:active { cursor:grabbing; }
+    #sheetBar .grab { display:block; width:44px; height:5px; margin:0 auto 5px; border-radius:3px; background:var(--muted); opacity:.55; }
+    #sheetBar .row { display:flex; align-items:center; gap:10px; height:34px; }
+    #sheetBar .cnt { font-weight:700; font-size:15px; white-space:nowrap; }
+    #sheetBar .legend { margin-left:auto; gap:9px; flex-wrap:nowrap; white-space:nowrap; }
+    #sheetBar .chev { color:var(--muted); font-size:12px; transition:transform .2s; }
+    #sheet.open .chev { transform:rotate(180deg); }
+    .item { padding:12px 14px; min-height:60px; }
+    .item b { font-size:15px; }
+    .item .when { font-size:13px; }
+    .foot { display:block; }
+
+    #locate { bottom:30px; }
+    .leaflet-control-attribution { font-size:10px; line-height:1.3; max-width:78vw; }
+    .leaflet-touch .leaflet-bar a { width:40px; height:40px; line-height:40px; }
+    .leaflet-touch .leaflet-control-layers-toggle { width:44px; height:44px; }
+    .popup { max-width:none; font-size:14px; padding-right:12px; }
+    .popup .items { font-size:13px; }
+    .leaflet-container .nav a.btn { padding:12px 16px; min-height:44px; font-size:15px; }
+    .leaflet-container .nav a:not(.btn) { font-size:14px; padding:10px 4px; }
+    .leaflet-container a.leaflet-popup-close-button { width:36px; height:36px; font:24px/34px system-ui, sans-serif; }
+  }
+
+  /* ===== Phone, landscape (short screens): slim one-row header, list on the left ===== */
+  @media (max-height: 520px) {
+    header { flex-wrap:nowrap; overflow-x:auto; padding:6px 10px; gap:8px; }
+    h1 { font-size:14px; white-space:nowrap; flex:none; }
+    h1 .co { display:none; }
+    .filters { flex-wrap:nowrap; flex:none; }
+    .filters button { flex:none; padding:6px 12px; white-space:nowrap; }
+    .tools { flex:0 0 200px; }
+    #q { padding:5px 10px; }
+    header .legend, header .meta { display:none; }
+    #sheet { width:clamp(220px, 38vw, 330px); }
+    .item { padding:8px 12px; }
+    #locate { bottom:30px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Highlands <span class="co">County </span>Garage Sales</h1>
+  <div class="filters" id="filters">
+    <button data-f="today" aria-pressed="false">Today</button>
+    <button data-f="weekend" aria-pressed="false">This weekend</button>
+    <button data-f="week" aria-pressed="false">Next 7 days</button>
+    <button data-f="all" aria-pressed="true">All upcoming</button>
+  </div>
+  <div class="tools">
+    <input id="q" type="search" placeholder="Search sales…" aria-label="Search sales" autocomplete="off" enterkeyhint="search">
+  </div>
+  <div class="legend">
+    <span><span class="dot today"></span>Today</span>
+    <span><span class="dot weekend"></span>Weekend</span>
+    <span><span class="dot later"></span>Later</span>
+    <span class="you-legend" hidden><span class="dot you"></span>You</span>
+  </div>
+  <div class="meta" id="meta"></div>
+</header>
+<main>
+  <div id="mapwrap">
+    <div id="map"></div>
+    <button id="locate" type="button" aria-pressed="false" title="Show my location on the map" hidden>📍 My location</button>
+  </div>
+  <section id="sheet" aria-label="Sales list">
+    <button id="sheetBar" type="button" aria-expanded="false" aria-controls="list">
+      <span class="grab" aria-hidden="true"></span>
+      <span class="row">
+        <span class="cnt" id="sheetCount"></span>
+        <span class="legend">
+          <span><span class="dot today"></span>Today</span>
+          <span><span class="dot weekend"></span>Weekend</span>
+          <span><span class="dot later"></span>Later</span>
+          <span class="you-legend" hidden><span class="dot you"></span>You</span>
+        </span>
+        <span class="chev" aria-hidden="true">▲</span>
+      </span>
+    </button>
+    <div id="list"></div>
+    <footer class="legal">
+      &copy; 2026 Zen &middot; Listings from the
+      <a href="https://www.hctaxcollector.com/garagesales/" target="_blank" rel="noopener">Highlands County Tax Collector</a><span id="repoWrap" hidden>
+      &middot; <a id="repoLink" href="#" target="_blank" rel="noopener">Source on GitHub</a></span>
+    </footer>
+  </section>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="data.js"></script>
+<script>
+// Set this to your GitHub repository's address to show a "Source on GitHub" link in the footer.
+// Left empty, the link is simply not shown.
+const REPO_URL = "";
+if (REPO_URL) { document.getElementById("repoLink").href = REPO_URL; document.getElementById("repoWrap").hidden = false; }
+
+const D = window.GARAGE_DATA || { sales: [], unmapped: [], updated: null };
+
+const map = L.map("map").setView([27.4955, -81.4409], 10);
+// Street layer: OpenStreetMap when served over http(s). OSM rejects requests with no referrer, which
+// is what happens when a page is opened from disk (file://), so fall back to Esri street tiles there.
+const streetLayer = location.protocol === "file:"
+  ? L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
+      maxZoom: 19,
+      attribution: 'Tiles &copy; Esri'
+    })
+  : L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    });
+// Satellite = Esri imagery plus two transparent Esri label layers on top (road names, then town/place names).
+const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services";
+const imageryLayer = L.tileLayer(`${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, {
+  maxZoom: 19, maxNativeZoom: 18, zIndex: 1,
+  attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics'
+});
+const satelliteLayer = L.layerGroup([
+  imageryLayer,
+  L.tileLayer(`${ESRI}/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}`, {
+    maxZoom: 19, maxNativeZoom: 18, zIndex: 2,
+    attribution: 'Labels &copy; Esri'
+  }),
+  L.tileLayer(`${ESRI}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`, {
+    maxZoom: 19, maxNativeZoom: 18, zIndex: 3
+  })
+]);
+
+// Remember each visitor's choice (per browser; falls back quietly if storage is blocked).
+let savedBase = null;
+try { savedBase = localStorage.getItem("gst-basemap"); } catch (e) {}
+// Default to Satellite (a visitor's saved choice wins). If the imagery can't load at all, drop back to Street.
+(savedBase === "Street" ? streetLayer : satelliteLayer).addTo(map);
+L.control.layers({ "Street": streetLayer, "Satellite": satelliteLayer }, null, { position: "topright" }).addTo(map);
+let imgOk = 0, imgFail = 0;
+imageryLayer.on("tileload", () => { imgOk++; });
+imageryLayer.on("tileerror", () => {
+  imgFail++;
+  if (imgOk === 0 && imgFail >= 4 && map.hasLayer(satelliteLayer)) {
+    map.removeLayer(satelliteLayer); streetLayer.addTo(map);
+    try { toast("Satellite imagery isn't available right now, so showing the street map."); } catch (e) {}
+  }
+});
+map.on("baselayerchange", (e) => { try { localStorage.setItem("gst-basemap", e.name); } catch (err) {} });
+const layer = L.layerGroup().addTo(map);
+const layer2 = L.layerGroup().addTo(map); // the visitor's own location (kept separate so filters don't clear it)
+
+const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+const iso = (d) => d.toLocaleDateString("en-CA");
+const addDays = (s, n) => { const d = new Date(s + "T12:00:00"); d.setDate(d.getDate() + n); return iso(d); };
+const short = (s) => new Date(s + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+const range = (s) => (s.start === s.end ? short(s.start) : `${short(s.start)} – ${short(s.end)}`);
+const titleCase = (s) => s.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
+
+// Navigation links. Uses the street address (not our geocoded coordinates) so the phone's own
+// map app does the final lookup. iPhone -> Apple Maps, Android -> geo: link (opens the default
+// map app or a chooser), anything else -> Google Maps directions in a new tab.
+const UA = navigator.userAgent;
+const isIOS = /iPad|iPhone|iPod/.test(UA) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const isAndroid = /Android/i.test(UA);
+function navHtml(s) {
+  const q = encodeURIComponent(`${titleCase(s.address)}, ${titleCase(s.city)}, FL ${s.zip}`);
+  const google = esc(`https://www.google.com/maps/dir/?api=1&destination=${q}`);
+  if (isIOS) {
+    return `<div class="nav"><a class="btn" href="${esc(`https://maps.apple.com/?daddr=${q}&dirflg=d`)}">Open in Apple Maps</a><a href="${google}">Google Maps</a></div>`;
+  }
+  if (isAndroid) {
+    return `<div class="nav"><a class="btn" href="${esc(`geo:0,0?q=${q}`)}">Open in Maps app</a><a href="${google}">Google Maps</a></div>`;
+  }
+  return `<div class="nav"><a class="btn" href="${google}" target="_blank" rel="noopener">Directions in Google Maps</a></div>`;
+}
+
+// "Weekend" = the Saturday/Sunday pair that is current or next. On Sat/Sun that's the weekend underway.
+function weekendRange(t) {
+  const dow = new Date(t + "T12:00:00").getDay();
+  const sat = addDays(t, dow === 6 ? 0 : dow === 0 ? -1 : 6 - dow);
+  return [sat, addDays(sat, 1)];
+}
+
+// Color category: green if on today, else orange if it overlaps this weekend, else blue.
+function statusOf(s, t) {
+  if (s.start <= t && s.end >= t) return "today";
+  const [sat, sun] = weekendRange(t);
+  if (s.start <= sun && s.end >= sat) return "weekend";
+  return "later";
+}
+
+const FILTERS = {
+  today:   (s, t) => s.start <= t && s.end >= t,
+  weekend: (s, t) => { const [sat, sun] = weekendRange(t); return s.start <= sun && s.end >= sat; },
+  week:    (s, t) => s.start <= addDays(t, 7) && s.end >= t,
+  all:     (s, t) => s.end >= t,
+};
+
+// Teardrop pin: colored body, white edge, dark halo underneath and a soft shadow, so it reads on any
+// background (satellite greens included). The tip of the pin is the exact location.
+const pinIcon = (color) => L.divIcon({
+  className: "pin",
+  iconSize: [28, 38], iconAnchor: [14, 37], popupAnchor: [0, -33],
+  html: `<svg viewBox="0 0 30 40" width="28" height="38" aria-hidden="true">
+    <path d="M15 1.5C7.6 1.5 1.8 7.2 1.8 14.4c0 9.2 10 19.6 12.3 22 .5.5 1.3.5 1.8 0 2.3-2.4 12.3-12.8 12.3-22C28.2 7.2 22.4 1.5 15 1.5z" fill="${color}" stroke="rgba(0,0,0,.65)" stroke-width="5.5" stroke-linejoin="round"/>
+    <path d="M15 1.5C7.6 1.5 1.8 7.2 1.8 14.4c0 9.2 10 19.6 12.3 22 .5.5 1.3.5 1.8 0 2.3-2.4 12.3-12.8 12.3-22C28.2 7.2 22.4 1.5 15 1.5z" fill="${color}" stroke="#fff" stroke-width="2.6" stroke-linejoin="round"/>
+    <circle cx="15" cy="14.5" r="5" fill="#fff"/>
+  </svg>`
+});
+
+let current = "all";
+let query = "";
+let me = null; // { lat, lon, acc } once the visitor shares their location. Stays in this browser.
+const listEl = document.getElementById("list");
+
+// Text search: every word must appear somewhere in the address, city, zip or item list (case-insensitive).
+const hay = (s) => `${s.address} ${s.city} ${s.zip} ${s.items.join(" ")}`.toLowerCase();
+const matches = (s) => query.split(/\s+/).filter(Boolean).every((w) => hay(s).includes(w));
+
+const miles = (lat1, lon1, lat2, lon2) => {
+  const r = Math.PI / 180, dLat = (lat2 - lat1) * r, dLon = (lon2 - lon1) * r;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLon / 2) ** 2;
+  return 3958.8 * 2 * Math.asin(Math.sqrt(a));
+};
+const distOf = (s) => (me ? miles(me.lat, me.lon, s.lat, s.lon) : null);
+const fmtMi = (d) => (d < 0.1 ? "<0.1 mi" : d < 10 ? d.toFixed(1) + " mi" : Math.round(d) + " mi");
+
+let rows = []; // current list rows + markers, so distances can be refreshed without rebuilding (keeps popups open)
+const popupHtml = (s) => {
+  const d = distOf(s), estate = s.items.includes("Estate Sale");
+  return `<div class="popup"><b>${esc(titleCase(s.address))}</b><br>${esc(titleCase(s.city))}, FL ${esc(s.zip)}<br>` +
+    `${esc(range(s))}${estate ? " · <b>Estate sale</b>" : ""}${d != null ? " · " + fmtMi(d) + " away" : ""}` +
+    `<div class="items">${esc(s.items.join(", "))}</div>` + navHtml(s) + `</div>`;
+};
+const whenText = (s) => {
+  const d = distOf(s);
+  return `${range(s)} · ${titleCase(s.city)}${s.items.includes("Estate Sale") ? " · Estate sale" : ""}${d != null ? " · " + fmtMi(d) : ""}`;
+};
+function refreshDistances() {
+  rows.forEach(({ s, when, marker }) => { when.textContent = whenText(s); marker.setPopupContent(popupHtml(s)); });
+}
+
+function render(fit = true) {
+  const t = iso(new Date());
+  const inDate = D.sales.filter((s) => FILTERS[current](s, t));
+  const shown = inDate.filter(matches).sort((a, b) => a.start.localeCompare(b.start) || a.address.localeCompare(b.address));
+  layer.clearLayers();
+  listEl.innerHTML = "";
+  rows = [];
+  if (query) {
+    const bar = document.createElement("div");
+    bar.className = "note";
+    bar.style.borderBottom = "1px solid var(--line)";
+    bar.innerHTML = `Showing ${shown.length} matching “${esc(query)}” · <a href="#" id="clearQ">clear</a>`;
+    listEl.appendChild(bar);
+    bar.querySelector("#clearQ").onclick = (e) => { e.preventDefault(); const q = document.getElementById("q"); q.value = ""; query = ""; render(); };
+  }
+
+  const bounds = [];
+  shown.forEach((s) => {
+    const status = statusOf(s, t);
+    const marker = L.marker([s.lat, s.lon], {
+      icon: pinIcon(cssVar("--c-" + status)),
+      zIndexOffset: { today: 300, weekend: 200, later: 100 }[status],
+      keyboard: false
+    }).addTo(layer);
+    marker.bindPopup(popupHtml(s), { maxWidth: Math.min(300, window.innerWidth - 72), autoPanPadding: [16, 16] });
+    bounds.push([s.lat, s.lon]);
+
+    const div = document.createElement("div");
+    div.className = "item";
+    div.innerHTML = `<b><span class="dot ${status}"></span>${esc(titleCase(s.address))}</b><span class="when"></span>`;
+    const when = div.querySelector(".when");
+    when.textContent = whenText(s);
+    rows.push({ s, when, marker });
+    div.onclick = () => {
+      const go = () => { map.setView([s.lat, s.lon], Math.max(map.getZoom(), 14)); marker.openPopup(); };
+      if (sheetMode() && sheetEl.classList.contains("open")) { setSheet(false); setTimeout(() => { map.invalidateSize(); go(); }, 230); }
+      else go();
+    };
+    listEl.appendChild(div);
+  });
+
+  if (!shown.length) listEl.insertAdjacentHTML("beforeend", `<div class="empty">${query ? "No sales match your search." : "No sales match this filter."}</div>`);
+
+  if (fit && bounds.length) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+
+  const unmapped = (D.unmapped || []).filter(matches);
+  if (unmapped.length && current === "all") {
+    const note = document.createElement("div");
+    note.className = "note";
+    note.innerHTML = `<h2>Couldn't be placed on the map (${unmapped.length})</h2>` +
+      unmapped.map((s) => `<div><a href="${esc(s.mapUrl)}" target="_blank" rel="noopener">${esc(titleCase(s.address))}, ${esc(titleCase(s.city))}</a> · ${esc(range(s))}</div>`).join("");
+    listEl.appendChild(note);
+  }
+
+  const countText = `${shown.length}${query ? " of " + inDate.length : ""} sale${shown.length === 1 && !query ? "" : "s"}`;
+  const updatedText = D.updated ? `data updated ${new Date(D.updated).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}` : "";
+  document.getElementById("meta").textContent = countText + (updatedText ? " · " + updatedText : "");
+  document.getElementById("sheetCount").textContent = countText;
+  if (updatedText) listEl.insertAdjacentHTML("beforeend", `<div class="foot">${esc(updatedText.charAt(0).toUpperCase() + updatedText.slice(1))}</div>`);
+}
+
+document.getElementById("filters").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  current = b.dataset.f;
+  document.querySelectorAll("#filters button").forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+  render();
+});
+
+// ---- Phone layout: bottom sheet + keep the map sized correctly ----
+const sheetEl = document.getElementById("sheet"), sheetBar = document.getElementById("sheetBar");
+const sheetMode = () => window.matchMedia("(max-width: 720px) and (min-height: 521px)").matches;
+function setSheet(open) { sheetEl.classList.toggle("open", open); sheetBar.setAttribute("aria-expanded", open ? "true" : "false"); }
+// Drag or swipe the handle: the panel follows the finger, then snaps open or closed. A plain tap toggles it.
+(() => {
+  const px = (v) => { const d = document.createElement("div"); d.style.cssText = `position:absolute;visibility:hidden;pointer-events:none;height:${v}`; document.body.appendChild(d); const h = d.getBoundingClientRect().height; d.remove(); return h; };
+  let pid = null, startY = 0, startH = 0, lastY = 0, lastT = 0, vel = 0, dragging = false, justDragged = false, closedH = 0, openH = 0;
+  const clamp = (v) => Math.max(closedH, Math.min(openH, v));
+  const finish = (e) => {
+    if (e.pointerId !== pid) return;
+    pid = null;
+    if (!dragging) return;
+    dragging = false; justDragged = true; setTimeout(() => (justDragged = false), 50);
+    const h = sheetEl.getBoundingClientRect().height;
+    const open = Math.abs(vel) > 0.4 ? vel < 0 : h > (closedH + openH) / 2; // a quick flick wins; otherwise nearest end
+    sheetEl.style.transition = ""; sheetEl.style.height = "";
+    setSheet(open);
+  };
+  sheetBar.addEventListener("pointerdown", (e) => {
+    if (!sheetMode() || !e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
+    const cs = getComputedStyle(sheetEl);
+    closedH = px(cs.getPropertyValue("--closed")); openH = px(cs.getPropertyValue("--open"));
+    pid = e.pointerId; startY = lastY = e.clientY; lastT = e.timeStamp; vel = 0; dragging = false;
+    startH = sheetEl.getBoundingClientRect().height;
+  });
+  sheetBar.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== pid) return;
+    const dy = e.clientY - startY;
+    if (!dragging && Math.abs(dy) > 6) { dragging = true; sheetEl.style.transition = "none"; try { sheetBar.setPointerCapture(pid); } catch (err) {} }
+    if (!dragging) return;
+    const dt = e.timeStamp - lastT;
+    if (dt > 0) vel = 0.8 * vel + 0.2 * ((e.clientY - lastY) / dt); // px per ms, positive = moving down (smoothed)
+    lastY = e.clientY; lastT = e.timeStamp;
+    sheetEl.style.height = clamp(startH - dy) + "px";
+  });
+  sheetBar.addEventListener("pointerup", finish);
+  sheetBar.addEventListener("pointercancel", finish);
+  sheetBar.addEventListener("click", () => { if (!justDragged) setSheet(!sheetEl.classList.contains("open")); });
+})();
+// Re-measure whenever the map's box changes (sheet opening, rotation, address bar showing/hiding).
+if ("ResizeObserver" in window) new ResizeObserver(() => map.invalidateSize()).observe(document.getElementById("mapwrap"));
+
+// ---- Search box ----
+let qTimer;
+const qBox = document.getElementById("q");
+const applySearch = () => {
+  const v = qBox.value.toLowerCase().trim();
+  if (v === query) return;
+  clearTimeout(qTimer);
+  qTimer = setTimeout(() => { query = v; render(); }, 120);
+};
+["input", "search", "change", "keyup"].forEach((ev) => qBox.addEventListener(ev, applySearch));
+
+// ---- My location (asked only when the visitor taps the button; never sent anywhere) ----
+map.createPane("you").style.zIndex = 450; // above sale dots, below popups
+let meDot = null, meRing = null, toastTimer;
+function toast(msg) {
+  let el = document.querySelector(".toast");
+  if (!el) { el = document.createElement("div"); el.className = "toast"; document.getElementById("map").appendChild(el); }
+  el.textContent = msg;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.remove(), 5000);
+}
+
+const locateBtn = document.getElementById("locate");
+let watchId = null, wantTrack = false, firstFix = true, lastRefresh = null;
+
+// Zoom to the visitor plus the nearest few sales currently showing.
+function frameMe() {
+  if (!me) return;
+  const near = D.sales.filter((s) => FILTERS[current](s, iso(new Date())) && matches(s))
+    .sort((a, b) => distOf(a) - distOf(b)).slice(0, 5);
+  map.fitBounds([[me.lat, me.lon], ...near.map((s) => [s.lat, s.lon])], { padding: [50, 50], maxZoom: 15 });
+}
+
+// Called for every position update. The map is only moved on the very first fix (never while you pan or zoom).
+function onFix(pos, userInitiated) {
+  me = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy };
+  const first = firstFix; firstFix = false;
+  locateBtn.hidden = false;
+  locateBtn.textContent = "📍 Recenter";
+  locateBtn.title = "Zoom to my location and the nearest sales";
+  locateBtn.setAttribute("aria-pressed", "true");
+  document.querySelectorAll(".you-legend").forEach((e) => (e.hidden = false));
+
+  if (!meDot) {
+    meRing = L.circle([me.lat, me.lon], { radius: me.acc, pane: "you", weight: 1, color: cssVar("--c-you"), fillColor: cssVar("--c-you"), fillOpacity: 0.12, interactive: false });
+    meDot = L.circleMarker([me.lat, me.lon], { radius: 8, pane: "you", weight: 3, color: "#fff", fillColor: cssVar("--c-you"), fillOpacity: 1 }).bindTooltip("You are here");
+    layer2.addLayer(meRing).addLayer(meDot);
+  } else {
+    meDot.setLatLng([me.lat, me.lon]);
+    meRing.setLatLng([me.lat, me.lon]).setRadius(me.acc);
+  }
+
+  // Refresh distances at most every 10 s, and only after moving at least 50 m.
+  const now = Date.now();
+  if (!lastRefresh || (miles(lastRefresh.lat, lastRefresh.lon, me.lat, me.lon) * 1609.34 >= 50 && now - lastRefresh.t >= 10000)) {
+    lastRefresh = { lat: me.lat, lon: me.lon, t: now };
+    refreshDistances();
+  }
+
+  // On the first fix, frame the visitor and nearby sales. On an automatic lookup, leave the map alone if
+  // they're far from every sale (say, visiting from out of town) so the county view isn't lost.
+  if (first) {
+    const nearest = Math.min(Infinity, ...D.sales.map(distOf));
+    if (userInitiated || nearest <= 40) frameMe();
+  }
+}
+
+function stopTracking() {
+  if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+}
+
+function startTracking(userInitiated) {
+  if (!("geolocation" in navigator)) { if (userInitiated) toast("This browser can't share its location."); return; }
+  if (!window.isSecureContext) { if (userInitiated) toast("Location only works on secure (https) pages."); return; }
+  wantTrack = true;
+  if (watchId !== null) return;
+  if (userInitiated && !me) locateBtn.textContent = "📍 Locating…";
+  let toasted = false;
+  watchId = navigator.geolocation.watchPosition(
+    (pos) => onFix(pos, userInitiated),
+    (err) => {
+      if (err.code === 1) { // declined, or revoked later: stop and offer the button
+        stopTracking(); wantTrack = false;
+        locateBtn.hidden = false; locateBtn.textContent = "📍 Enable location";
+        if (userInitiated) toast("Location permission was denied. You can allow it in your browser's site settings, then tap again.");
+      } else if (!me) { // couldn't get a first position
+        locateBtn.hidden = false; locateBtn.textContent = "📍 My location";
+        if (userInitiated && !toasted) { toasted = true; toast(err.code === 3 ? "Timed out finding your location. Try again." : "Couldn't determine your location."); }
+      }
+      // else: a brief glitch while moving (tunnel, weak signal). Keep the last position and keep watching.
+    },
+    { enableHighAccuracy: true, timeout: 20000, maximumAge: 5000 }
+  );
+}
+
+locateBtn.addEventListener("click", () => {
+  if (me && watchId !== null) frameMe();           // already tracking: just recenter
+  else { stopTracking(); startTracking(true); }    // not tracking (denied, failed, stopped): try again
+});
+
+// Save battery: stop while the page is hidden, resume when it's visible again.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopTracking();
+  else if (wantTrack) startTracking(false);
+});
+
+// On load: ask for location. If the visitor already declined earlier, don't nag; just offer the button.
+async function autoLocate() {
+  if (!("geolocation" in navigator) || !window.isSecureContext) { locateBtn.hidden = false; return; }
+  let state = "prompt";
+  try {
+    const st = await navigator.permissions.query({ name: "geolocation" });
+    state = st.state;
+    st.onchange = () => { if (st.state === "granted" && watchId === null) startTracking(false); }; // allowed later in settings
+  } catch (e) { /* Permissions API unavailable: just try */ }
+  if (state === "denied") { locateBtn.textContent = "📍 Enable location"; locateBtn.hidden = false; return; }
+  startTracking(false); // granted: silent; prompt: shows the browser's permission prompt
+}
+
+render();
+autoLocate();
+</script>
+</body>
+</html>
