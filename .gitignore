@@ -3,7 +3,7 @@ data.js
 sales.json
 geocode-cache.json
 page-debug.html
-ATSPlugins/
+public/
 
 node_modules/
 *.log

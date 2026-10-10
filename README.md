@@ -22,16 +22,16 @@ The page and the data are separate on purpose. Updating the page never touches `
 ## Run it locally
 
 ```sh
-node scrape.mjs          # writes ATSPlugins/data.js
-cp GarageSalesTracker.html ATSPlugins/
-php -S localhost:8000 -t ATSPlugins   # or any static file server
+node scrape.mjs          # writes public/data.js
+cp GarageSalesTracker.html public/
+php -S localhost:8000 -t public       # or any static file server
 ```
 
 Then open <http://localhost:8000/GarageSalesTracker.html>. Location features need HTTPS or `localhost`.
 
 Scraper settings (environment variables, all optional):
 
-- `OUT_DIR`: where `data.js` and `sales.json` are written (default: `ATSPlugins/` next to the script).
+- `OUT_DIR`: where `data.js` and `sales.json` are written (default: `public/` next to the script).
 - `STATE_DIR`: where the geocode cache lives (default: next to the script).
 - `WPNONCE`: a security token to use instead of finding one automatically. Only needed if the site changes how it provides it.
 
@@ -98,6 +98,6 @@ Near the top of the script in `GarageSalesTracker.html`, set `REPO_URL` to this 
 
 ## License
 
-[MIT](LICENSE). Copyright (c) 2026 Zen.
+[MIT](LICENSE). Copyright (c) 2026 Michael Taylor (kovarid@gmail.com).
 
 The license covers this project's code. The listing data belongs to its source, the Highlands County Tax Collector, and map data and imagery are credited on the map.

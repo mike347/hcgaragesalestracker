@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // Highlands County garage/yard sale scraper + geocoder.
-// Copyright (c) 2026 Zen. Released under the MIT License (see LICENSE in the source repository).
+// Copyright (c) 2026 Michael Taylor (kovarid@gmail.com). Released under the MIT License (see LICENSE in the source repository).
 //
 // Usage:   node scrape.mjs            (Node 18+, no dependencies)
 // Folders (all optional environment variables):
-//   OUT_DIR    where data.js and sales.json are written. Default: an ATSPlugins folder next to this script.
+//   OUT_DIR    where data.js and sales.json are written. Default: a public folder next to this script.
 //   STATE_DIR  where the geocode cache (and debug output) live. Default: next to this script.
 //              When deployed from a git checkout, point this somewhere outside the checkout.
-// Output:  ATSPlugins/data.js and ATSPlugins/sales.json, in a folder next to this script
+// Output:  public/data.js and public/sales.json, in a folder next to this script
 //          (override the folder with the OUT_DIR environment variable).
 //          GarageSalesTracker.html lives in that same folder and loads data.js.
 //
@@ -21,8 +21,8 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
-// Public output folder. With the script in /var/www/html this resolves to /var/www/html/ATSPlugins.
-const OUT_DIR = process.env.OUT_DIR || path.join(DIR, "ATSPlugins");
+// Public output folder. With the script in /var/www/html this resolves to /var/www/html/public.
+const OUT_DIR = process.env.OUT_DIR || path.join(DIR, "garagesales");
 const PAGE_URL = "https://www.hctaxcollector.com/garagesales/";
 const AJAX_URL = "https://www.hctaxcollector.com/wp-admin/admin-ajax.php";
 const STATE_DIR = process.env.STATE_DIR || DIR;
