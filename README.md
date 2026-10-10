@@ -94,7 +94,7 @@ Location features only work over HTTPS, so put the site behind a TLS-terminating
 
 ## Setting your own details
 
-Near the top of the script in `GarageSalesTracker.html`, set `REPO_URL` to this repository's address to show the "Source on GitHub" link in the footer. To change the name in the copyright line, edit the `<footer class="legal">` block, the comment at the top of the file, and the `LICENSE` file.
+Near the top of the script in `GarageSalesTracker.html`, `REPO_URL` holds this repository's address (no `.git`). It drives the "Source on GitHub" link in the footer and the "Report a problem or suggest a feature" (GitHub Issues) and source links in the **?** help dialog. Set it to `""` to hide those links. To change the name in the copyright line, edit the `<footer class="legal">` block, the comment at the top of the file, and the `LICENSE` file.
 
 ## License
 

@@ -35,6 +35,24 @@
   .meta { color:var(--muted); font-size:12px; margin-left:auto; }
   .legend { display:flex; gap:12px; font-size:12px; color:var(--muted); align-items:center; flex-wrap:wrap; }
   .legend .dot { margin-right:5px; }
+  #helpBtn { flex:none; width:32px; height:32px; padding:0; font:inherit; font-weight:700; font-size:16px; color:var(--fg); background:var(--chip); border:1px solid var(--line); border-radius:50%; cursor:pointer; }
+  #helpBtn:hover { border-color:var(--accent); }
+
+  /* ----- help dialog ----- */
+  #help { width:min(400px, calc(100vw - 32px)); max-height:calc(100dvh - 32px); padding:0; border:1px solid var(--line); border-radius:12px; background:var(--bg); color:var(--fg); box-shadow:0 10px 30px rgba(0,0,0,.35); }
+  #help::backdrop { background:rgba(0,0,0,.45); }
+  #help .in { padding:16px 18px 18px; }
+  #help h2 { font-size:16px; margin:0 0 8px; padding-right:36px; }
+  #help h3 { font-size:13px; margin:14px 0 6px; }
+  #help p { margin:0 0 8px; }
+  #help ul { margin:0; padding:0; list-style:none; }
+  #help li { margin:4px 0; }
+  #help .x { position:absolute; top:8px; right:8px; width:36px; height:36px; padding:0; font:22px/1 system-ui, sans-serif; color:var(--muted); background:none; border:0; border-radius:50%; cursor:pointer; }
+  #help .x:hover { background:var(--chip); color:var(--fg); }
+  #help .links a { display:block; padding:10px 12px; margin-top:8px; border:1px solid var(--line); border-radius:8px; color:var(--fg); text-decoration:none; }
+  #help .links a:hover { border-color:var(--accent); }
+  #help .links small { display:block; color:var(--muted); font-size:12px; }
+  #help .fine { color:var(--muted); font-size:12px; margin-top:12px; }
 
   /* ----- layout: list/sheet + map ----- */
   main { flex:1; display:flex; min-height:0; }
@@ -84,6 +102,7 @@
     h1 { order:1; font-size:15px; white-space:nowrap; }
     h1 .co { display:none; }
     .tools { order:2; flex:1 1 130px; max-width:none; }
+    #helpBtn { order:2; width:38px; height:38px; }
     #q { padding:9px 12px; border-radius:10px; }
     .filters { order:3; flex:0 0 calc(100% + 24px); margin:0 -12px; padding:0 12px 2px; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; scroll-snap-type:x proximity; scroll-padding-left:12px; }
     .filters::-webkit-scrollbar { display:none; }
@@ -156,7 +175,28 @@
     <span class="you-legend" hidden><span class="dot you"></span>You</span>
   </div>
   <div class="meta" id="meta"></div>
+  <button id="helpBtn" type="button" aria-haspopup="dialog" aria-controls="help" title="Help and feedback">?</button>
 </header>
+<dialog id="help" aria-labelledby="helpTitle">
+  <div class="in">
+    <form method="dialog"><button class="x" aria-label="Close">&times;</button></form>
+    <h2 id="helpTitle">Highlands County Garage Sales</h2>
+    <p>Upcoming garage and yard sales from the Highlands County Tax Collector's public listing, on a map. Tap a pin or a list entry for details and directions.</p>
+    <h3>Pin colors</h3>
+    <ul>
+      <li><span class="dot today"></span>On today</li>
+      <li><span class="dot weekend"></span>This weekend</li>
+      <li><span class="dot later"></span>Later</li>
+      <li><span class="dot you"></span>You (if you share your location; it never leaves your device)</li>
+    </ul>
+    <div class="links" id="helpLinks" hidden>
+      <h3>Feedback</h3>
+      <a id="issueLink" href="#" target="_blank" rel="noopener">Report a problem or suggest a feature<small>Opens GitHub Issues (free GitHub account needed)</small></a>
+      <a id="repoLink2" href="#" target="_blank" rel="noopener">View the source code<small>On GitHub</small></a>
+    </div>
+    <p class="fine">A listing that looks wrong? The data comes straight from the <a href="https://www.hctaxcollector.com/garagesales/" target="_blank" rel="noopener">county's listing</a>, so check it there first.</p>
+  </div>
+</dialog>
 <main>
   <div id="mapwrap">
     <div id="map"></div>
@@ -188,10 +228,23 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="data.js"></script>
 <script>
-// Set this to your GitHub repository's address to show a "Source on GitHub" link in the footer.
-// Left empty, the link is simply not shown.
-const REPO_URL = "";
-if (REPO_URL) { document.getElementById("repoLink").href = REPO_URL; document.getElementById("repoWrap").hidden = false; }
+// The GitHub repository's address. It drives the "Source on GitHub" link in the footer and the
+// feedback links in the help dialog. Left empty, those links are simply not shown.
+const REPO_URL = "https://github.com/mike347/hcgaragesalestracker";
+if (REPO_URL) {
+  document.getElementById("repoLink").href = REPO_URL; document.getElementById("repoWrap").hidden = false;
+  document.getElementById("repoLink2").href = REPO_URL;
+  document.getElementById("issueLink").href = REPO_URL + "/issues/new";
+  document.getElementById("helpLinks").hidden = false;
+}
+
+// ---- Help dialog ----
+const helpEl = document.getElementById("help");
+document.getElementById("helpBtn").addEventListener("click", () => {
+  if (typeof helpEl.showModal === "function") helpEl.showModal();
+  else window.open(REPO_URL || "https://www.hctaxcollector.com/garagesales/", "_blank", "noopener"); // very old browsers
+});
+helpEl.addEventListener("click", (e) => { if (e.target === helpEl) helpEl.close(); }); // tap outside the box closes it
 
 const D = window.GARAGE_DATA || { sales: [], unmapped: [], updated: null };
 

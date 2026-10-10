@@ -31,7 +31,7 @@ The page is **public**. Never add personal locations, secrets or private network
 - **Layout:** desktop is a sidebar plus map. Phone portrait (`max-width:720px` and `min-height:521px`) is a compact header, map first, and a draggable bottom sheet (`#sheet`, pointer events on `#sheetBar`, `touch-action:none`). Short viewports (`max-height:520px`, phone landscape) use a slim one-row header. A `ResizeObserver` calls `map.invalidateSize()`.
 - **Security:** all data is interpolated into HTML through `esc()`. Keep it that way; the data comes from an outside source.
 - **CSS gotcha:** an element given an author `display` value ignores the `hidden` attribute. `#locate[hidden]{display:none}` exists for that reason.
-- The footer (`.legal`) holds the copyright and a link to the county listing. Set `REPO_URL` near the top of the script to show the "Source on GitHub" link.
+- The footer (`.legal`) holds the copyright and a link to the county listing. The **?** button (`#helpBtn`) opens a native `<dialog id="help">` (pin-color key, feedback links); it closes with Esc, the × button or a tap outside. `REPO_URL` near the top of the script (no `.git`) drives the footer "Source on GitHub" link and the dialog's Issues (`/issues/new`) and source links; empty hides them.
 
 ## Deployment (Linux VM behind a TLS-terminating reverse proxy)
 
